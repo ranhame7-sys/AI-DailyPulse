@@ -11,6 +11,8 @@ from config import (
     RAW_ARTICLES_FILE,
     DIGEST_OUTPUT,
     SOCIAL_OUTPUT,
+    INSTAGRAM_PACK_OUTPUT,
+    INSTAGRAM_PACK_JSON,
 )
 
 _client = None
@@ -53,30 +55,35 @@ def _parse_json(text: str) -> dict:
 
 # ─── Step 1: Filter + Summarize (one LLM call per article) ──
 
-DIGEST_PROMPT = """你是技术内容编辑兼分析师。先判断这篇文章是否值得收录到每日AI/科技文摘，值得则完成中文摘要。
+DIGEST_PROMPT = """You are an AI-news editor for an Instagram page focused on useful, current AI tools, product launches, model releases, creator workflows, and major AI updates.
 
-拒绝标准(输出 relevant=false):
-- 纯营销/广告/软文
-- 与编程、AI、科技完全无关
-- 纯八卦/娱乐，无信息量
-- 重复的行情/价格播报
+Decide whether the article is worth including in today's creator-focused AI content pack.
 
-通过标准:
-- 新的技术突破/研究发现
-- 有用的工具/库/产品发布
-- 有深度的技术分析/教程
-- 行业重要动态/政策
+Reject when:
+- it is pure marketing, sponsored copy, or low-information hype
+- it is unrelated to AI, software, creator tools, or meaningful tech developments
+- it repeats an already-covered story without new information
+- it is mainly opinion with no concrete update
 
-通过时输出:
-- title_cn: 中文标题(翻译+润色，保持原意，像新闻标题，≤25字)
-- key_points: 最多2条，每条≤30字，只保留最核心信息
-- one_liner: 一句话概括(≤30字)
-- relevance_score: 0.0~1.0，越高越值得分享给国内开发者
+Keep when:
+- a new AI model, product, feature, tool, workflow, benchmark, or important policy/update is announced
+- the story gives creators or everyday AI users something practical to understand or try
+- it is a significant industry development with clear user impact
 
-规则: 不添加原文没有的信息；专业术语保留英文原名；涉及数字必须准确。
+For kept stories output:
+- title_cn: concise English headline, max 90 characters (field name kept for compatibility)
+- key_points: max 2 factual points, each concise
+- one_liner: one-sentence explanation of why it matters
+- relevance_score: 0.0 to 1.0, where 1.0 is highly useful for an AI-focused Instagram audience
 
-输出仅 JSON:
-{"relevant": true, "reason": "一句话理由", "title_cn": "中文标题", "key_points": ["要点1", "要点2"], "one_liner": "一句话概括", "relevance_score": 0.8}"""
+Rules:
+- Do not invent facts.
+- Preserve product/model/company names exactly.
+- Keep numbers and dates accurate.
+- Prefer concrete usefulness over hype.
+
+Output JSON only:
+{"relevant": true, "reason": "short reason", "title_cn": "English headline", "key_points": ["point 1", "point 2"], "one_liner": "why it matters", "relevance_score": 0.8}"""
 
 
 def _fallback_digest(article: dict) -> dict:
@@ -128,29 +135,32 @@ MAX_ERROR_RATIO = 0.5
 
 # ─── Step 2: Finalize (one editor call → headline + 4 picks) ──
 
-FINALIZE_PROMPT = """你是科技新闻主编，为每日 AI/科技早报定稿。
+FINALIZE_PROMPT = """You are the editor of a daily AI Instagram page.
 
-下面是一批候选文章的摘要（已筛过，含中文标题、要点、来源、原文链接）。请：
+From the candidate stories below, choose exactly 5 of the strongest stories for today's content pack.
 
-1. 选出本日最重磅、最值得头条的 1 篇：
-   - headline_title: 抓人眼球的中文标题（≤25字，侧重重点，如"DeepSeek V4 正式版发布！"）
-   - headline_paragraph: 120~180字正文，一句话点出新闻，再展开核心信息，自然段落，不列点
-2. 另选 4 篇本日最值得关注的，按重要性从高到低排序，每篇：
-   - title_cn: 中文标题（英文原文转中文，忠于原意）
-   - blurb: 50字左右简介
-   - url: 原文链接（必须引用下方候选中的 url，禁止编造）
+Selection priorities:
+1. New AI tools, major feature launches, model releases, creator workflows, or important updates.
+2. Practical usefulness to creators and everyday AI users.
+3. Freshness and significance.
+4. Avoid five stories that are all about the same company or topic when possible.
 
-链接规则: 头条与精选的链接优先选新闻站点/公司官网/官方博客；
-x.com、twitter.com、reddit.com、youtube.com 等社交平台链接只能在没有更好来源时使用。
+Return:
+- headline: the strongest story, with:
+  - headline_title: clear English headline
+  - headline_paragraph: 2-3 factual sentences explaining the update and why it matters
+  - url: must exactly match a candidate URL
+- items: exactly 4 additional stories, each with:
+  - title_cn: concise English title (field name kept for compatibility)
+  - blurb: 1-2 factual sentences
+  - url: must exactly match a candidate URL
 
-正文规则: 只基于候选摘要里已有的信息写作，不得编造具体数字、引语或原文没有的细节。
+Do not invent links, dates, capabilities, prices, benchmarks, or quotes.
+Prefer official/company/news sources over social posts where possible.
 
-头条标准：重大突破/发布、行业大事件优先；教程、软文、普通产品体验不得当头条。
-
-仅输出 JSON：
+Output JSON only:
 {"headline": {"url": "...", "headline_title": "...", "headline_paragraph": "..."},
- "items": [{"url": "...", "title_cn": "...", "blurb": "..."}]}
-// items 恰好 4 条，不得包含头条，顺序即重要性降序"""
+ "items": [{"url": "...", "title_cn": "...", "blurb": "..."}]}"""
 
 
 def _candidate_section(articles: list[dict]) -> str:
@@ -234,37 +244,14 @@ def finalize(articles: list[dict]) -> dict:
 # ─── Step 3: Headline Rewrite (social posts) ────────────
 
 STYLE_PROMPTS = {
-    "wechat": """你是微信公众号科技编辑。将以下内容写成公众号推送段落。
-风格: 专业简洁，中英术语混用，200-300字。开头直接说事，不要寒暄。
-用 Markdown 格式，保留原文链接。不要标题（标题单独生成）。""",
+    "instagram_caption": """Write an Instagram caption for an AI-news post.
+Start with a strong but truthful hook, then explain the update in simple English.
+Keep it concise and useful. Include one natural CTA at the end.
+Add 5-8 relevant hashtags. Do not exaggerate or invent facts.""",
 
-    "xiaohongshu": """你是小红书科技博主。将以下内容写成小红书文案。
-
-格式（严格执行）:
-- 第1段：用一段话概括讲了什么（≤80字）
-- 然后分点展开，每点用「 | 标题」开头，后跟1句解释
-- 末尾加 3 个标签
-
-规则:
-- 全中文
-- 口语化，适当 emoji
-- ≤300字
-- 有干货，不水""",
-
-    "zhihu": """你是知乎科技领域答主。将以下内容写成知乎回答段落。
-风格: 深度分析，有观点，400-600字。带引用格式标注来源。""",
-
-    "telegram": """你是 Telegram 科技频道编辑。压缩为一条消息。
-格式: 🔥 [中文标题]
-📝 一句话要点
-🔗 原文链接
-不超过 150 字。简洁有力。""",
-
-    "douyin": """你是抖音科技博主。写成抖音视频口播文案。
-风格: 口语化，开头3秒必须有钩子。
-文案区 ≤200字：第一段说事，第二段一句话引互动。
-末尾加 3 个标签。
-禁止书面语、禁止长难句。""",
+    "reel_script": """Write a short Instagram Reel script about this AI update.
+Use: hook -> what happened -> why it matters -> who should care -> simple CTA.
+Natural spoken English, roughly 30-45 seconds. No editing directions. No hype that is not supported by the source.""",
 }
 
 
@@ -313,6 +300,143 @@ def assemble_digest(headline: dict, items: list[dict], cover_file: str = "") -> 
     )
 
     return digest
+
+
+
+# ─── Instagram Daily Content Pack ───────────────────────
+
+INSTAGRAM_TOPIC_PROMPT = """Turn this verified AI-news story into one Instagram carousel content package.
+
+Audience: people who follow AI tools, AI product updates, creator workflows, and practical AI use.
+Tone: clear, premium, useful, human, not clickbait.
+Language: English.
+
+Return JSON only with:
+- topic_title: short topic name
+- hooks: exactly 3 strong truthful hook options
+- slides: exactly 6 slides. Each slide is {"title": "...", "body": "..."}.
+  Slide 1 = strongest hook/cover
+  Slide 2 = what happened
+  Slide 3 = what it does / key feature
+  Slide 4 = why it matters
+  Slide 5 = who should use/care
+  Slide 6 = takeaway / CTA
+- caption: Instagram-ready caption, concise and factual
+- hashtags: 6 to 10 relevant hashtags without duplicates
+- reel_angle: one short Reel angle / concept
+- source_url: repeat the exact source URL supplied
+
+Rules:
+- No invented claims, dates, prices, features, or quotes.
+- If information is uncertain, say so briefly instead of guessing.
+- Keep slide text short enough for a clean carousel.
+"""
+
+def generate_instagram_pack(headline: dict, items: list[dict], articles: list[dict]) -> dict:
+    by_url = {a["url"]: a for a in articles}
+    selected = [{
+        "url": headline["url"],
+        "title": headline["headline_title"],
+        "summary": headline["headline_paragraph"],
+    }]
+    for it in items[:4]:
+        selected.append({
+            "url": it["url"],
+            "title": it["title_cn"],
+            "summary": it["blurb"],
+        })
+
+    packs = []
+    for idx, story in enumerate(selected, 1):
+        article = by_url.get(story["url"], {})
+        d = article.get("digest", {})
+        source = article.get("source", "")
+        user = (
+            f"Story {idx}\n"
+            f"Title: {story['title']}\n"
+            f"Summary: {story['summary']}\n"
+            f"Key points: {json.dumps(d.get('key_points', []), ensure_ascii=False)}\n"
+            f"Source: {source}\n"
+            f"Source URL: {story['url']}"
+        )
+        try:
+            pack = _parse_json(_chat(
+                INSTAGRAM_TOPIC_PROMPT,
+                user,
+                temperature=0.5,
+                max_tokens=1800,
+                json_mode=True,
+            ))
+        except Exception as e:
+            print(f"[process] instagram pack error for {story['title'][:50]}: {e}")
+            pack = {
+                "topic_title": story["title"],
+                "hooks": [
+                    story["title"],
+                    f"Here is what changed: {story['title']}",
+                    f"Why this AI update matters: {story['title']}",
+                ],
+                "slides": [
+                    {"title": story["title"], "body": ""},
+                    {"title": "What happened", "body": story["summary"]},
+                    {"title": "Key point", "body": (d.get("key_points") or [""])[0]},
+                    {"title": "Why it matters", "body": d.get("one_liner", "")},
+                    {"title": "Who should care", "body": "AI users, creators, and people following new AI tools."},
+                    {"title": "Takeaway", "body": "Check the original source before trying or sharing the update."},
+                ],
+                "caption": f"{story['title']}\n\n{story['summary']}",
+                "hashtags": ["#AI", "#AITools", "#ArtificialIntelligence", "#TechNews", "#CreatorTools", "#AIUpdates"],
+                "reel_angle": f"Explain {story['title']} in under 45 seconds.",
+                "source_url": story["url"],
+            }
+
+        pack["source_url"] = story["url"]
+        packs.append(pack)
+
+    payload = {
+        "generated_at": datetime.now(BEIJING_TZ).isoformat(),
+        "topic_count": len(packs),
+        "topics": packs,
+    }
+
+    INSTAGRAM_PACK_JSON.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    md = [f"# Daily AI Instagram Content Pack — {datetime.now(BEIJING_TZ):%Y-%m-%d}", ""]
+    for i, pack in enumerate(packs, 1):
+        md.append(f"## Topic {i}: {pack.get('topic_title', '')}")
+        md.append("")
+        md.append("### 3 Hook Options")
+        for h in (pack.get("hooks") or [])[:3]:
+            md.append(f"- {h}")
+        md.append("")
+        md.append("### 6-Slide Carousel")
+        for sidx, slide in enumerate((pack.get("slides") or [])[:6], 1):
+            md.append(f"**Slide {sidx}: {slide.get('title', '')}**")
+            body = slide.get("body", "")
+            if body:
+                md.append(body)
+            md.append("")
+        md.append("### Caption")
+        md.append(pack.get("caption", ""))
+        md.append("")
+        md.append("### Hashtags")
+        tags = pack.get("hashtags") or []
+        md.append(" ".join(tags))
+        md.append("")
+        md.append("### Reel Angle")
+        md.append(pack.get("reel_angle", ""))
+        md.append("")
+        md.append(f"Source: {pack.get('source_url', '')}")
+        md.append("")
+        md.append("---")
+        md.append("")
+
+    INSTAGRAM_PACK_OUTPUT.write_text("\n".join(md), encoding="utf-8")
+    print(f"[process] Instagram content pack written to {INSTAGRAM_PACK_OUTPUT}")
+    return payload
 
 
 # ─── Orchestrator ───────────────────────────────────────
@@ -365,7 +489,14 @@ def process_all():
         json.dumps(posts_map, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    return {"digest": digest, "posts": posts_map, "article_count": len(articles)}
+    instagram_pack = generate_instagram_pack(headline, items, articles)
+
+    return {
+        "digest": digest,
+        "posts": posts_map,
+        "instagram_pack": instagram_pack,
+        "article_count": len(articles),
+    }
 
 
 if __name__ == "__main__":
