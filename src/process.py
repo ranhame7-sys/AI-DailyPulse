@@ -105,7 +105,7 @@ def process_articles(articles: list[dict]) -> tuple[list[dict], int]:
     errors = 0
     for i, a in enumerate(articles):
         print(f"[process] digesting {i+1}/{len(articles)}: {a['title'][:50]}")
-        text = f"标题: {a['title']}\n来源: {a['source']}\n摘要: {a.get('summary', '')[:1500]}"
+        text = f"Title: {a['title']}\nSource: {a['source']}\nSummary: {a.get('summary', '')[:1500]}"
         try:
             data = _parse_json(_chat(DIGEST_PROMPT, text, temperature=0.1, max_tokens=600, json_mode=True))
             if not data.get("relevant"):
@@ -257,11 +257,11 @@ Natural spoken English, roughly 30-45 seconds. No editing directions. No hype th
 
 def generate_headline_posts(headline: dict, article: dict) -> dict:
     """Generate multi-platform social posts for the headline story."""
-    content = f"""头条标题: {headline['headline_title']}
-正文介绍: {headline['headline_paragraph']}
-要点: {json.dumps(article['digest'].get('key_points', []), ensure_ascii=False)}
-来源: {article['source']}
-原文: {article['url']}"""
+    content = f"""Headline: {headline['headline_title']}
+Summary: {headline['headline_paragraph']}
+Key points: {json.dumps(article['digest'].get('key_points', []), ensure_ascii=False)}
+Source: {article['source']}
+Original URL: {article['url']}"""
 
     posts = {}
     for platform, prompt in STYLE_PROMPTS.items():
@@ -277,26 +277,26 @@ def generate_headline_posts(headline: dict, article: dict) -> dict:
 
 def assemble_digest(headline: dict, items: list[dict], cover_file: str = "") -> str:
     """Assemble the blog-style digest: 1 headline story + a numbered pick list."""
-    today = datetime.now(BEIJING_TZ).strftime("%Y年%m月%d日")
+    today = datetime.now(BEIJING_TZ).strftime("%d %B %Y")
 
-    cover_section = f"\n![封面]({cover_file})\n" if cover_file else ""
+    cover_section = f"\n![Cover]({cover_file})\n" if cover_file else ""
 
     list_entries = []
     for i, it in enumerate(items, 1):
         list_entries.append(
-            f"{i}. **{it['title_cn']}**（[原文]({it['url']})）— {it['blurb'].rstrip('。')}。"
+            f"{i}. **{it['title_cn']}** ([Source]({it['url']})) — {it['blurb']}"
         )
 
     digest = (
         f"# 🤖 AI DailyPulse | {today}\n\n"
-        f"## 🔥 今日头条\n\n"
+        f"## 🔥 Top Story\n\n"
         f"### {headline['headline_title']}\n\n"
-        f"{headline['headline_paragraph'].rstrip('。')}。\n"
+        f"{headline['headline_paragraph']}\n"
         f"{cover_section}\n"
-        f"[原文链接]({headline['url']})\n\n"
-        f"## 📌 其他重点\n\n"
+        f"[Original source]({headline['url']})\n\n"
+        f"## 📌 Four More Stories\n\n"
         + "\n".join(list_entries)
-        + "\n\n> 📬 AI 自动生成\n"
+        + "\n\n> AI-generated draft — review before publishing.\n"
     )
 
     return digest
