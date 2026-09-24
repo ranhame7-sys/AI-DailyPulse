@@ -34,8 +34,8 @@ BEIJING_TZ = INDIA_TZ
 # Any OpenAI-compatible provider. LLM_* names are preferred; DEEPSEEK_* work
 # as legacy aliases.
 LLM_API_KEY = env_str("LLM_API_KEY") or env_str("DEEPSEEK_API_KEY")
-LLM_BASE_URL = env_str("LLM_BASE_URL") or env_str("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-LLM_MODEL = env_str("LLM_MODEL", "deepseek-chat")
+LLM_BASE_URL = env_str("LLM_BASE_URL") or env_str("DEEPSEEK_BASE_URL", "https://openrouter.ai/api/v1")
+LLM_MODEL = env_str("LLM_MODEL", "openrouter/free")
 
 # --- Content Sources ---
 SOURCES = {
@@ -52,7 +52,7 @@ RSS_FEEDS = [
 ]
 
 MAX_ARTICLES_PER_SOURCE = 10
-MAX_TOTAL_ARTICLES = 30
+MAX_TOTAL_ARTICLES = 20
 
 # --- Publishing (optional) ---
 TELEGRAM_BOT_TOKEN = env_str("TELEGRAM_BOT_TOKEN")
