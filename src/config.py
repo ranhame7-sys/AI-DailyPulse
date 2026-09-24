@@ -15,12 +15,7 @@ if _env_file.exists():
 
 
 def env_str(key: str, default: str = "") -> str:
-    """Read env var, falling back to default when unset OR empty.
-
-    Empty must fall back too: GitHub Actions sets empty env vars for
-    secrets that don't exist, which once produced a blank LLM_BASE_URL
-    and broke every LLM call in the pipeline.
-    """
+    """Read env var, falling back to default when unset OR empty."""
     return os.environ.get(key, "").strip() or default
 
 
@@ -30,13 +25,14 @@ OUTPUT_DIR = ROOT / "output"
 DATA_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# China has no DST, fixed offset avoids the tzdata dependency on Windows
-BEIJING_TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
+# User workflow timezone: India Standard Time.
+INDIA_TZ = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
+# Backwards-compatible alias used by the original project modules.
+BEIJING_TZ = INDIA_TZ
 
 # --- LLM ---
 # Any OpenAI-compatible provider. LLM_* names are preferred; DEEPSEEK_* work
-# as legacy aliases so existing secrets keep working without changes.
-# OrcaRouter: LLM_BASE_URL=https://api.orcarouter.ai/v1, LLM_MODEL=deepseek/deepseek-chat
+# as legacy aliases.
 LLM_API_KEY = env_str("LLM_API_KEY") or env_str("DEEPSEEK_API_KEY")
 LLM_BASE_URL = env_str("LLM_BASE_URL") or env_str("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 LLM_MODEL = env_str("LLM_MODEL", "deepseek-chat")
@@ -48,19 +44,17 @@ SOURCES = {
     "arxiv_cs_ai": "https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=lastUpdatedDate&max_results=5",
 }
 
-# Reddit removed: it returns 403 HTML to CI runner IPs, so those sources
-# yielded 0 articles on every scheduled run.
 RSS_FEEDS = [
     "https://hnrss.org/frontpage?count=10",
     "https://techcrunch.com/feed/",
-    "https://simonwillison.net/atom/everything/",  # highest-signal AI blog
-    "https://lobste.rs/rss",  # replaces r/programming
+    "https://simonwillison.net/atom/everything/",
+    "https://lobste.rs/rss",
 ]
 
 MAX_ARTICLES_PER_SOURCE = 10
 MAX_TOTAL_ARTICLES = 30
 
-# --- Publishing ---
+# --- Publishing (optional) ---
 TELEGRAM_BOT_TOKEN = env_str("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHANNEL = env_str("TELEGRAM_CHANNEL")
 
@@ -68,7 +62,6 @@ WP_URL = env_str("WP_URL")
 WP_USER = env_str("WP_USER")
 WP_APP_PASSWORD = env_str("WP_APP_PASSWORD")
 
-# Feishu bot
 FEISHU_WEBHOOK_URL = env_str("FEISHU_WEBHOOK_URL")
 FEISHU_SECRET = env_str("FEISHU_SECRET")
 
@@ -77,6 +70,8 @@ SEEN_URLS_FILE = DATA_DIR / "seen_urls.json"
 RAW_ARTICLES_FILE = DATA_DIR / "raw_articles.json"
 DIGEST_OUTPUT = OUTPUT_DIR / "digest.md"
 SOCIAL_OUTPUT = OUTPUT_DIR / "social_posts.json"
+INSTAGRAM_PACK_OUTPUT = OUTPUT_DIR / "instagram_daily_pack.md"
+INSTAGRAM_PACK_JSON = OUTPUT_DIR / "instagram_daily_pack.json"
 
 
 def validate_config() -> None:
